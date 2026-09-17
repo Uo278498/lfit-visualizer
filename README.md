@@ -26,14 +26,24 @@ streamlit run app.py
 
 Incluye:
 - carga y exploración real de CSV;
+- detección básica de codificación y separador CSV;
 - selección de variables;
-- configuración visual de discretización;
+- discretización real por cuantiles, amplitud igual o cortes manuales;
+- vista previa antes/después y exportación del dataset procesado;
+- validación de la configuración y avisos de valores ausentes;
 - configuración de ejecución;
 - resultados simulados;
 - exportación.
 
 Todavía no incluye:
-- discretización real;
 - integración con LFIT/PRIDE;
 - métricas de reglas;
 - grafo de relaciones.
+
+## Comprobar la lógica
+
+Con el entorno virtual activado:
+
+```powershell
+python -m unittest -v test_core.py
+```

@@ -1,7 +1,10 @@
 import streamlit as st
 import pandas as pd
+from hashlib import sha256
 
+from src.data_loading import DatasetLoadError, build_variable_summary, load_csv_bytes
 from src.discretization import DiscretizationError, apply_discretizations
+from src.validation import validate_analysis_configuration
 
 st.set_page_config(page_title='LFIT Visualizer', page_icon='🧠', layout='wide')
 
@@ -19,6 +22,7 @@ for key, value in {
     'discretization_config': {},
     'discretization_summary': {},
     'dataset_signature': None,
+    'dataset_load_info': None,
     'mock_rules': DEFAULT_RULES,
 }.items():
     if key not in st.session_state:
@@ -36,27 +40,32 @@ if section == '1. Datos':
     uploaded = st.file_uploader('Selecciona un archivo CSV', type=['csv'])
     if uploaded is not None:
         content = uploaded.getvalue()
-        signature = (uploaded.name, len(content), hash(content))
         try:
-            df = pd.read_csv(pd.io.common.BytesIO(content))
-        except Exception:
-            df = pd.read_csv(pd.io.common.BytesIO(content), sep=';')
-        if st.session_state.dataset_signature != signature:
-            st.session_state.df = df
-            st.session_state.processed_df = df.copy(deep=True)
-            st.session_state.roles = {}
-            st.session_state.output_var = None
-            st.session_state.discretization_config = {}
-            st.session_state.discretization_summary = {}
-            st.session_state.dataset_signature = signature
-            for state_key in list(st.session_state):
-                if state_key.startswith(('role_', 'disc_method_', 'cuts_', 'bins_')):
-                    del st.session_state[state_key]
+            df, load_info = load_csv_bytes(content)
+        except DatasetLoadError as error:
+            st.error(str(error))
+        else:
+            signature = (uploaded.name, len(content), sha256(content).hexdigest())
+            if st.session_state.dataset_signature != signature:
+                st.session_state.df = df
+                st.session_state.processed_df = df.copy(deep=True)
+                st.session_state.roles = {}
+                st.session_state.output_var = None
+                st.session_state.discretization_config = {}
+                st.session_state.discretization_summary = {}
+                st.session_state.dataset_signature = signature
+                for state_key in list(st.session_state):
+                    if state_key.startswith(('role_', 'disc_method_', 'cuts_', 'bins_')):
+                        del st.session_state[state_key]
+            st.session_state.dataset_load_info = load_info
 
     df = st.session_state.df
     if df is None:
         st.info('Todavía no se ha cargado ningún dataset.')
     else:
+        load_info = st.session_state.dataset_load_info
+        if load_info is not None:
+            st.caption(f'Lectura detectada: {load_info.encoding}; separador: {load_info.separator_label}.')
         c1,c2,c3,c4 = st.columns(4)
         c1.metric('Filas', len(df))
         c2.metric('Columnas', len(df.columns))
@@ -66,12 +75,7 @@ if section == '1. Datos':
         st.subheader('Vista previa')
         st.dataframe(df.head(20), use_container_width=True)
         st.subheader('Resumen de variables')
-        summary = pd.DataFrame({
-            'Variable': df.columns,
-            'Tipo': [str(df[c].dtype) for c in df.columns],
-            'Únicos': [df[c].nunique(dropna=True) for c in df.columns],
-            'Ausentes': [df[c].isna().sum() for c in df.columns],
-        })
+        summary = build_variable_summary(df)
         st.dataframe(summary, use_container_width=True, hide_index=True)
 
 elif section == '2. Variables':
@@ -87,20 +91,19 @@ elif section == '2. Variables':
             previous = st.session_state.roles.get(col, 'Entrada')
             idx = role_options.index(previous) if previous in role_options else 0
             roles[col] = st.selectbox(col, role_options, index=idx, key=f'role_{col}')
-        outputs = [c for c,r in roles.items() if r == 'Salida']
-        if len(outputs) > 1:
-            st.error('Selecciona únicamente una variable como salida.')
-        elif len(outputs) == 0:
-            st.info('Debes marcar una columna como «Salida».')
-            st.session_state.output_var = None
-        else:
-            st.session_state.output_var = outputs[0]
-            st.success(f'Variable de salida: {outputs[0]}')
         if roles != st.session_state.roles:
             st.session_state.processed_df = df.copy(deep=True)
             st.session_state.discretization_config = {}
             st.session_state.discretization_summary = {}
         st.session_state.roles = roles
+        validation = validate_analysis_configuration(df, roles)
+        st.session_state.output_var = validation.output_variable
+        if validation.output_variable is not None:
+            st.success(f'Variable de salida: {validation.output_variable}')
+        for error in validation.errors:
+            st.error(error)
+        for warning in validation.warnings:
+            st.warning(warning)
         st.dataframe(pd.DataFrame([{'Variable':c,'Rol':r} for c,r in roles.items()]), use_container_width=True, hide_index=True)
 
 elif section == '3. Discretizar':
@@ -189,8 +192,17 @@ elif section == '4. Configurar':
     if df is None:
         st.warning('Primero carga un dataset.')
     else:
-        inputs = [c for c,r in st.session_state.roles.items() if r == 'Entrada']
-        output = st.session_state.output_var
+        validation = validate_analysis_configuration(df, st.session_state.roles)
+        inputs = list(validation.input_variables)
+        output = validation.output_variable
+        st.subheader('Estado de la configuración')
+        if validation.is_ready:
+            st.success('La selección de variables es válida para preparar el análisis.')
+        else:
+            for error in validation.errors:
+                st.error(error)
+        for warning in validation.warnings:
+            st.warning(warning)
         c1,c2 = st.columns(2)
         c1.write('**Entradas**')
         c1.write(', '.join(inputs) if inputs else 'Ninguna')
@@ -202,7 +214,7 @@ elif section == '4. Configurar':
         else:
             st.info('Aún no se ha aplicado ninguna discretización.')
         st.selectbox('Algoritmo', ['PRIDE (propuesto)','LFIT / otro algoritmo'])
-        if st.button('Ejecutar LFIT', type='primary', disabled=(not output or not inputs)):
+        if st.button('Ejecutar LFIT', type='primary', disabled=not validation.is_ready):
             st.success('Ejecución simulada completada. La integración real con LFIT/PRIDE llegará después.')
 
 elif section == '5. Resultados':

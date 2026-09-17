@@ -28,6 +28,7 @@ Incluye:
 - carga y exploración real de CSV;
 - detección básica de codificación y separador CSV;
 - selección de variables;
+- tratamiento explícito de valores ausentes antes de discretizar;
 - discretización real por cuantiles, amplitud igual o cortes manuales;
 - vista previa antes/después y exportación del dataset procesado;
 - validación de la configuración y avisos de valores ausentes;

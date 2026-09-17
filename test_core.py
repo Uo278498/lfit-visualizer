@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.data_loading import build_variable_summary, load_csv_bytes
 from src.discretization import apply_discretizations
+from src.preprocessing import apply_missing_value_treatments
 from src.validation import validate_analysis_configuration
 
 
@@ -56,6 +57,32 @@ class ValidationAndDiscretizationTests(unittest.TestCase):
 
         self.assertEqual(processed["edad"].isna().sum(), 1)
         self.assertEqual(summary["edad"]["cuts"], [40.0, 65.0])
+
+    def test_missing_value_treatments_are_applied_to_a_copy(self):
+        dataframe = pd.DataFrame(
+            {"edad": [20, None, 60], "grupo": ["A", None, "B"], "salida": ["bajo", "alto", "alto"]}
+        )
+
+        processed, summary = apply_missing_value_treatments(
+            dataframe,
+            {
+                "edad": {"strategy": "median"},
+                "grupo": {"strategy": "unknown"},
+            },
+        )
+
+        self.assertEqual(dataframe["edad"].isna().sum(), 1)
+        self.assertEqual(processed["edad"].isna().sum(), 0)
+        self.assertEqual(processed.loc[1, "grupo"], "Desconocido")
+        self.assertEqual(summary["rows_removed"], 0)
+
+    def test_drop_rows_removes_only_rows_with_selected_missing_values(self):
+        processed, summary = apply_missing_value_treatments(
+            self.dataframe, {"edad": {"strategy": "drop_rows"}}
+        )
+
+        self.assertEqual(len(processed), 2)
+        self.assertEqual(summary["rows_removed"], 1)
 
 
 if __name__ == "__main__":

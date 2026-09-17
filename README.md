@@ -33,7 +33,8 @@ Incluye:
 - vista previa antes/después y exportación del dataset procesado;
 - validación de la configuración y avisos de valores ausentes;
 - ejecución experimental de PRIDE mediante `pylfit`;
-- matriz y detalle de reglas aprendidas;
+- matriz alineada de reglas con filtros, ordenación y detalle;
+- comparación de reglas, indicadores descriptivos y grafo de relaciones;
 - exportación.
 
 Todavía no incluye:

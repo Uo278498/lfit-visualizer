@@ -4,10 +4,11 @@ import pandas as pd
 
 from src.data_loading import build_variable_summary, load_csv_bytes
 from src.discretization import apply_discretizations
-from src.lfit_engine import run_pride
+from src.lfit_engine import LearnedRule, run_pride
 from src.preprocessing import apply_missing_value_treatments
 from src.state import initialize_session_state, reset_for_dataset
 from src.validation import validate_analysis_configuration
+from src.rule_analysis import comparison_table, filter_rules, graphviz_dot, relationship_counts, rules_to_matrix
 
 
 class SessionStateStub(dict):
@@ -128,6 +129,39 @@ class PRIDEIntegrationTests(unittest.TestCase):
         self.assertEqual(result.target_column, "riesgo")
         self.assertGreater(len(result.rules), 0)
         self.assertTrue(all(rule.coverage >= rule.compatible_cases for rule in result.rules))
+
+
+class RuleAnalysisTests(unittest.TestCase):
+    def setUp(self):
+        self.rules = (
+            LearnedRule("R1", {"edad": "mayor", "tension": "alta"}, "riesgo", "alto", "", 2, 8, 7),
+            LearnedRule("R2", {"edad": "mayor", "fumador": "si"}, "riesgo", "alto", "", 2, 5, 5),
+            LearnedRule("R3", {"tension": "normal"}, "riesgo", "bajo", "", 1, 10, 9),
+        )
+
+    def test_filters_rules_without_changing_the_source_collection(self):
+        filtered = filter_rules(
+            self.rules,
+            search="",
+            target_values=["alto"],
+            required_variables=["edad"],
+            require_all_variables=True,
+            min_coverage=6,
+            max_conditions=2,
+        )
+
+        self.assertEqual([rule.identifier for rule in filtered], ["R1"])
+        self.assertEqual(len(self.rules), 3)
+
+    def test_matrix_comparison_and_relationships_are_aligned_by_variable(self):
+        matrix = rules_to_matrix(list(self.rules), ("edad", "tension", "fumador"))
+        comparison = comparison_table(self.rules[0], self.rules[1], ("edad", "tension", "fumador"))
+        relationships = relationship_counts(list(self.rules), "riesgo")
+
+        self.assertEqual(matrix.loc[0, "fumador"], "—")
+        self.assertIn("Condición compartida", comparison["Relación"].tolist())
+        self.assertIn("Variable → salida", relationships["Tipo"].tolist())
+        self.assertIn("digraph rules", graphviz_dot(relationships, "riesgo"))
 
 
 if __name__ == "__main__":

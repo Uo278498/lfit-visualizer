@@ -5,7 +5,16 @@ import pandas as pd
 from src.data_loading import build_variable_summary, load_csv_bytes
 from src.discretization import apply_discretizations
 from src.preprocessing import apply_missing_value_treatments
+from src.state import initialize_session_state, reset_for_dataset
 from src.validation import validate_analysis_configuration
+
+
+class SessionStateStub(dict):
+    def __getattr__(self, name):
+        return self[name]
+
+    def __setattr__(self, name, value):
+        self[name] = value
 
 
 class DataLoadingTests(unittest.TestCase):
@@ -83,6 +92,23 @@ class ValidationAndDiscretizationTests(unittest.TestCase):
 
         self.assertEqual(len(processed), 2)
         self.assertEqual(summary["rows_removed"], 1)
+
+
+class StateTests(unittest.TestCase):
+    def test_dataset_reset_clears_previous_analysis_state(self):
+        session_state = SessionStateStub()
+        initialize_session_state(session_state)
+        session_state["role_edad"] = "Salida"
+        session_state.roles = {"edad": "Salida"}
+        session_state.discretization_summary = {"edad": {"method": "manual"}}
+        dataframe = pd.DataFrame({"edad": [20, 30]})
+
+        reset_for_dataset(session_state, dataframe, ("nuevo.csv", 10, "hash"))
+
+        self.assertEqual(session_state.roles, {})
+        self.assertIsNone(session_state.output_var)
+        self.assertNotIn("role_edad", session_state)
+        self.assertTrue(session_state.df.equals(dataframe))
 
 
 if __name__ == "__main__":

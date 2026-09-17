@@ -41,6 +41,15 @@ Todavía no incluye:
 - métricas de reglas;
 - grafo de relaciones.
 
+## Estructura del proyecto
+
+```text
+app.py                 # Punto de entrada y navegación
+views/                 # Una pantalla de interfaz por módulo
+src/                   # Lógica de datos, estado y transformaciones
+test_core.py           # Pruebas automatizadas de la lógica principal
+```
+
 ## Comprobar la lógica
 
 Con el entorno virtual activado:

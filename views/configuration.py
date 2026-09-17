@@ -50,7 +50,13 @@ def render() -> None:
     )
     if st.button("Ejecutar LFIT", type="primary", disabled=not validation.is_ready):
         try:
-            result = run_pride(st.session_state.processed_df, inputs, output)
+            result = run_pride(
+                st.session_state.processed_df,
+                inputs,
+                output,
+                preprocessing_summary=st.session_state.preprocessing_summary,
+                discretization_summary=st.session_state.discretization_summary,
+            )
         except LFITEngineError as error:
             st.error(str(error))
         else:

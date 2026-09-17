@@ -1,4 +1,4 @@
-"""Transformaciones de reglas para filtros, comparación e indicadores visuales."""
+"""Transformaciones de reglas para exploración, métricas y visualización."""
 
 from __future__ import annotations
 
@@ -9,6 +9,11 @@ import pandas as pd
 from src.lfit_engine import LearnedRule
 
 
+def format_percentage(value: float) -> str:
+    """Formatea una proporción de forma uniforme para la interfaz y exportación."""
+    return f"{value * 100:.1f}%"
+
+
 def filter_rules(
     rules: tuple[LearnedRule, ...],
     search: str,
@@ -17,8 +22,9 @@ def filter_rules(
     require_all_variables: bool,
     min_coverage: int,
     max_conditions: int,
+    min_consistency: float = 0.0,
 ) -> list[LearnedRule]:
-    """Filtra reglas únicamente para su exploración visual."""
+    """Filtra reglas únicamente para su exploración visual, sin reentrenar PRIDE."""
     query = search.strip().casefold()
     filtered = []
     for rule in rules:
@@ -29,6 +35,7 @@ def filter_rules(
             rule.target_value in target_values
             and has_variables
             and rule.coverage >= min_coverage
+            and rule.data_consistency >= min_consistency
             and rule.conditions_count <= max_conditions
             and (not query or query in rule.text.casefold())
         ):
@@ -37,8 +44,11 @@ def filter_rules(
 
 
 def sort_rules(rules: list[LearnedRule], criterion: str) -> list[LearnedRule]:
+    """Ordena las reglas visibles por una medida descriptiva elegida por la persona usuaria."""
     options = {
         "Cobertura (mayor a menor)": lambda rule: (-rule.coverage, rule.conditions_count, rule.identifier),
+        "Consistencia (mayor a menor)": lambda rule: (-rule.data_consistency, -rule.coverage, rule.identifier),
+        "Lift (mayor a menor)": lambda rule: (-(rule.lift or 0.0), -rule.coverage, rule.identifier),
         "Casos compatibles (mayor a menor)": lambda rule: (-rule.compatible_cases, -rule.coverage, rule.identifier),
         "Complejidad (menos condiciones)": lambda rule: (rule.conditions_count, -rule.coverage, rule.identifier),
         "Identificador": lambda rule: rule.identifier,
@@ -58,6 +68,9 @@ def rules_to_matrix(rules: list[LearnedRule], feature_columns: tuple[str, ...]) 
                 "Condiciones": rule.conditions_count,
                 "Cobertura": rule.coverage,
                 "Casos compatibles": rule.compatible_cases,
+                "Consistencia": format_percentage(rule.data_consistency),
+                "Frecuencia de salida": format_percentage(rule.target_prevalence),
+                "Lift": f"{rule.lift:.2f}" if rule.lift is not None else "—",
             }
         )
         rows.append(row)
@@ -112,26 +125,78 @@ def similar_rules(selected: LearnedRule, rules: list[LearnedRule]) -> pd.DataFra
                 "Salida": candidate.target_value,
             }
         )
+    columns = ["Regla", "Condiciones compartidas", "Solapamiento", "Salida"]
+    if not rows:
+        return pd.DataFrame(columns=columns)
     return pd.DataFrame(rows).sort_values(
         ["Solapamiento", "Condiciones compartidas"], ascending=False
-    ) if rows else pd.DataFrame(columns=["Regla", "Condiciones compartidas", "Solapamiento", "Salida"])
+    )
 
 
 def variable_indicators(rules: list[LearnedRule], feature_columns: tuple[str, ...]) -> pd.DataFrame:
-    """Indicadores descriptivos, no una medida de importancia causal."""
+    """Indicadores descriptivos; no estiman importancia causal de una variable."""
     rows = []
     for column in feature_columns:
         related = [rule for rule in rules if column in rule.antecedents]
+        total_coverage = sum(rule.coverage for rule in related)
+        weighted_consistency = (
+            sum(rule.compatible_cases for rule in related) / total_coverage
+            if total_coverage
+            else 0.0
+        )
+        weighted_lift = (
+            sum((rule.lift or 0.0) * rule.coverage for rule in related) / total_coverage
+            if total_coverage
+            else 0.0
+        )
         rows.append(
             {
                 "Variable": column,
                 "Reglas en las que aparece": len(related),
-                "Cobertura acumulada": sum(rule.coverage for rule in related),
+                "Cobertura acumulada": total_coverage,
+                "Consistencia ponderada": format_percentage(weighted_consistency),
+                "Lift medio ponderado": round(weighted_lift, 2),
                 "Reglas simples (≤ 2 condiciones)": sum(rule.conditions_count <= 2 for rule in related),
                 "Salidas distintas asociadas": len({rule.target_value for rule in related}),
             }
         )
     return pd.DataFrame(rows)
+
+
+def descriptive_findings(
+    rules: list[LearnedRule], feature_columns: tuple[str, ...]
+) -> list[str]:
+    """Genera observaciones prudentes para orientar la revisión clínica posterior."""
+    if not rules:
+        return []
+
+    findings: list[str] = []
+    lift_rules = [rule for rule in rules if rule.lift is not None]
+    if lift_rules:
+        strongest = max(lift_rules, key=lambda rule: (rule.lift or 0.0, rule.coverage))
+        findings.append(
+            f"{strongest.identifier} presenta el mayor lift visible ({strongest.lift:.2f}) para "
+            f"«{strongest.target_value}»: cubre {strongest.coverage} filas y tiene una "
+            f"consistencia observada de {format_percentage(strongest.data_consistency)}."
+        )
+
+    simplest = min(rules, key=lambda rule: (rule.conditions_count, -rule.coverage, rule.identifier))
+    findings.append(
+        f"La regla visible más simple es {simplest.identifier}: {simplest.conditions_count} "
+        f"condición(es), cobertura de {simplest.coverage} filas y salida «{simplest.target_value}»."
+    )
+
+    indicators = variable_indicators(rules, feature_columns)
+    if not indicators.empty and indicators["Reglas en las que aparece"].max() > 0:
+        most_present = indicators.sort_values(
+            ["Reglas en las que aparece", "Cobertura acumulada"], ascending=False
+        ).iloc[0]
+        findings.append(
+            f"«{most_present['Variable']}» es la variable más presente en las reglas visibles "
+            f"({most_present['Reglas en las que aparece']} reglas). Esto describe su presencia "
+            "en la teoría, no una relación causal."
+        )
+    return findings
 
 
 def relationship_counts(rules: list[LearnedRule], target_column: str) -> pd.DataFrame:
@@ -149,9 +214,9 @@ def relationship_counts(rules: list[LearnedRule], target_column: str) -> pd.Data
         {"Origen": first, "Destino": second, "Tipo": kind, "Reglas asociadas": count}
         for (first, second, kind), count in counts.items()
     ]
-    return pd.DataFrame(rows).sort_values("Reglas asociadas", ascending=False) if rows else pd.DataFrame(
-        columns=["Origen", "Destino", "Tipo", "Reglas asociadas"]
-    )
+    if not rows:
+        return pd.DataFrame(columns=["Origen", "Destino", "Tipo", "Reglas asociadas"])
+    return pd.DataFrame(rows).sort_values("Reglas asociadas", ascending=False)
 
 
 def graphviz_dot(relationships: pd.DataFrame, target_column: str) -> str:
@@ -159,8 +224,8 @@ def graphviz_dot(relationships: pd.DataFrame, target_column: str) -> str:
     lines = ["digraph rules {", "rankdir=LR;", 'node [shape=box, style="rounded,filled", fillcolor="#F8FAFC"];']
     lines.append(f'"{target_column}" [shape=oval, fillcolor="#DBEAFE"];')
     for _, relation in relationships.iterrows():
-        source = str(relation["Origen"]).replace('"', "\\\"")
-        target = str(relation["Destino"]).replace('"', "\\\"")
+        source = str(relation["Origen"]).replace('"', '\\"')
+        target = str(relation["Destino"]).replace('"', '\\"')
         count = int(relation["Reglas asociadas"])
         color = "#2563EB" if relation["Tipo"] == "Variable → salida" else "#94A3B8"
         lines.append(

@@ -1,63 +1,70 @@
-# LFIT Visualizer — prototipo inicial
+# LFIT Visualizer
+
+Prototipo de TFG para preparar datasets clínicos, aprender reglas estáticas con PRIDE y explorar la teoría resultante de forma trazable.
 
 ## Ejecutar en Windows
 
-1. Abre PowerShell en esta carpeta.
-2. Crea un entorno virtual:
+En PowerShell, dentro de esta carpeta:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+streamlit run app.py
+```
+
+Si el entorno aún no existe:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-```
-
-3. Instala dependencias:
-
-```powershell
 pip install -r requirements.txt
-```
-
-4. Ejecuta la aplicación:
-
-```powershell
 streamlit run app.py
 ```
+
+## Flujo de trabajo
+
+1. Cargar un CSV y revisar sus variables.
+2. Asignar roles: entradas, una salida, identificador o exclusión.
+3. Tratar los valores ausentes y discretizar las entradas numéricas.
+4. Ejecutar PRIDE.
+5. Explorar, comparar y filtrar las reglas; revisar sus métricas y trazabilidad.
+6. Exportar reglas, datos procesados, trazabilidad e informe resumido.
 
 ## Estado actual
 
 Incluye:
-- carga y exploración real de CSV;
-- detección básica de codificación y separador CSV;
-- selección de variables;
-- tratamiento explícito de valores ausentes antes de discretizar;
-- discretización real por cuantiles, amplitud igual o cortes manuales;
-- vista previa antes/después y exportación del dataset procesado;
-- validación de la configuración y avisos de valores ausentes;
+
+- carga de CSV con detección básica de codificación y separador;
+- selección de variables, tratamiento explícito de ausentes y discretización;
 - ejecución experimental de PRIDE mediante `pylfit`;
-- matriz alineada de reglas con filtros, ordenación y detalle;
-- comparación de reglas, indicadores descriptivos y grafo de relaciones;
-- exportación.
+- matriz de reglas, filtros, comparador, detalle y grafo de relaciones;
+- métricas por regla: cobertura, casos compatibles, consistencia observada, frecuencia de salida y lift;
+- indicadores descriptivos por variable y hallazgos para revisión;
+- trazabilidad de la ejecución: entradas, salida, filas, transformaciones, algoritmo y versión;
+- exportación CSV, JSON de trazabilidad e informe resumido.
 
-Todavía no incluye:
-- modo LFIT longitudinal basado en transiciones temporales;
-- métricas de reglas;
-- grafo de relaciones.
+### Interpretación responsable
 
-## Alcance actual de PRIDE
+Las métricas se calculan en el mismo dataset usado para aprender la teoría:
 
-La primera integración aprende reglas estáticas entre entradas discretizadas y una salida discreta.
-No representa todavía transiciones temporales entre visitas de un mismo paciente, por lo que no debe
-interpretarse como un modelo de evolución clínica.
+- **Cobertura**: filas que cumplen el antecedente.
+- **Consistencia**: proporción de filas cubiertas cuya salida coincide con la regla.
+- **Lift**: consistencia dividida por la frecuencia global de ese valor de salida.
 
-`pylfit`, la dependencia que proporciona PRIDE, se distribuye bajo licencia GPL-3.0. Revisa esta
-implicación con la dirección del TFG antes de distribuir o desplegar el proyecto fuera del ámbito académico.
+Por tanto, ayudan a explorar patrones y priorizar su revisión, pero no demuestran validación clínica externa, generalización ni causalidad. La presencia de una variable en reglas tampoco constituye una medida de importancia causal.
 
-## Estructura del proyecto
+## Alcance de PRIDE en este prototipo
+
+La integración actual aprende reglas estáticas entre entradas discretizadas y una salida discreta. No representa todavía transiciones temporales entre visitas de un mismo paciente, por lo que no debe interpretarse como un modelo de evolución clínica longitudinal.
+
+`pylfit`, la dependencia que proporciona PRIDE, se distribuye bajo licencia GPL-3.0. Consulta esta implicación con la dirección del TFG antes de distribuir o desplegar el proyecto fuera del ámbito académico.
+
+## Estructura
 
 ```text
 app.py                 # Punto de entrada y navegación
-views/                 # Una pantalla de interfaz por módulo
-src/                   # Lógica de datos, estado y transformaciones
-test_core.py           # Pruebas automatizadas de la lógica principal
+views/                 # Pantallas de la interfaz
+src/                   # Lógica de datos, PRIDE, métricas y estado
+test_core.py           # Pruebas automatizadas
 ```
 
 ## Comprobar la lógica

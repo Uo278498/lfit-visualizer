@@ -8,7 +8,15 @@ from src.lfit_engine import LearnedRule, run_pride
 from src.preprocessing import apply_missing_value_treatments
 from src.state import initialize_session_state, reset_for_dataset
 from src.validation import validate_analysis_configuration
-from src.rule_analysis import comparison_table, filter_rules, graphviz_dot, relationship_counts, rules_to_matrix
+from src.rule_analysis import (
+    comparison_table,
+    descriptive_findings,
+    filter_rules,
+    graphviz_dot,
+    relationship_counts,
+    rules_to_matrix,
+    variable_indicators,
+)
 
 
 class SessionStateStub(dict):
@@ -123,12 +131,23 @@ class PRIDEIntegrationTests(unittest.TestCase):
             }
         )
 
-        result = run_pride(dataframe, ["tension", "fumador"], "riesgo")
+        result = run_pride(
+            dataframe,
+            ["tension", "fumador"],
+            "riesgo",
+            preprocessing_summary={"rows_before": 4, "rows_after": 4, "variables": []},
+            discretization_summary={},
+        )
 
         self.assertEqual(result.observations, 4)
         self.assertEqual(result.target_column, "riesgo")
         self.assertGreater(len(result.rules), 0)
         self.assertTrue(all(rule.coverage >= rule.compatible_cases for rule in result.rules))
+        self.assertTrue(all(0 <= rule.data_consistency <= 1 for rule in result.rules))
+        self.assertTrue(all(rule.lift is not None for rule in result.rules))
+        self.assertEqual(sum(count for _, count in result.target_distribution), 4)
+        self.assertEqual(result.trace.input_variables, ("tension", "fumador"))
+        self.assertEqual(result.trace.preprocessing_summary["rows_after"], 4)
 
 
 class RuleAnalysisTests(unittest.TestCase):
@@ -162,6 +181,34 @@ class RuleAnalysisTests(unittest.TestCase):
         self.assertIn("Condición compartida", comparison["Relación"].tolist())
         self.assertIn("Variable → salida", relationships["Tipo"].tolist())
         self.assertIn("digraph rules", graphviz_dot(relationships, "riesgo"))
+
+
+    def test_metrics_and_findings_are_descriptive(self):
+        measured_rules = [
+            LearnedRule(
+                "R4",
+                {"edad": "mayor"},
+                "riesgo",
+                "alto",
+                "",
+                1,
+                10,
+                8,
+                0.8,
+                0.4,
+                2.0,
+            )
+        ]
+
+        filtered = filter_rules(
+            tuple(measured_rules), "", ["alto"], [], False, 0, 2, min_consistency=0.75
+        )
+        indicators = variable_indicators(measured_rules, ("edad", "tension"))
+        findings = descriptive_findings(measured_rules, ("edad", "tension"))
+
+        self.assertEqual(filtered, measured_rules)
+        self.assertEqual(indicators.loc[0, "Consistencia ponderada"], "80.0%")
+        self.assertIn("mayor lift", findings[0])
 
 
 if __name__ == "__main__":

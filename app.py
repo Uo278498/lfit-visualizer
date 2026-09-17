@@ -20,6 +20,6 @@ PAGES = {
 
 st.sidebar.title("LFIT Visualizer")
 section = st.sidebar.radio("Flujo de trabajo", list(PAGES))
-st.sidebar.caption("Prototipo funcional · LFIT todavía simulado")
+st.sidebar.caption("Prototipo experimental · PRIDE integrado en modo estático")
 
 PAGES[section]()

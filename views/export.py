@@ -6,11 +6,31 @@ import streamlit as st
 
 def render() -> None:
     st.title("6. Exportación")
-    rules = pd.DataFrame(st.session_state.mock_rules)
+    result = st.session_state.analysis_result
+    if result is None:
+        rules = pd.DataFrame(st.session_state.mock_rules)
+        rules_filename = "reglas_simuladas.csv"
+    else:
+        rules = pd.DataFrame(
+            [
+                {
+                    "Regla": rule.identifier,
+                    "Antecedente": " AND ".join(
+                        f"{column} = {value}" for column, value in rule.antecedents.items()
+                    ),
+                    "Salida": f"{rule.target_variable} = {rule.target_value}",
+                    "Condiciones": rule.conditions_count,
+                    "Cobertura": rule.coverage,
+                    "Casos compatibles": rule.compatible_cases,
+                }
+                for rule in result.rules
+            ]
+        )
+        rules_filename = "reglas_pride.csv"
     st.download_button(
-        "Descargar reglas simuladas (CSV)",
+        "Descargar reglas (CSV)",
         rules.to_csv(index=False).encode("utf-8"),
-        "reglas_lfit.csv",
+        rules_filename,
         "text/csv",
     )
     if st.session_state.df is not None:

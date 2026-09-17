@@ -59,6 +59,7 @@ def _render_missing_value_treatment(dataframe: pd.DataFrame, inputs: list[str], 
                 st.session_state.preprocessing_summary = summary
                 st.session_state.discretization_config = {}
                 st.session_state.discretization_summary = {}
+                st.session_state.analysis_result = None
                 st.success("Tratamiento de valores ausentes aplicado.")
     else:
         st.info("No hay valores ausentes en las variables seleccionadas para el análisis.")
@@ -118,6 +119,7 @@ def _render_discretization(original: pd.DataFrame, inputs: list[str]) -> None:
             st.session_state.processed_df = processed
             st.session_state.discretization_config = configurations
             st.session_state.discretization_summary = summary
+            st.session_state.analysis_result = None
             st.success("Discretización aplicada al dataset procesado.")
 
     if not st.session_state.discretization_summary:

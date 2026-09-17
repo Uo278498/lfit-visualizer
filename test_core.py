@@ -4,6 +4,7 @@ import pandas as pd
 
 from src.data_loading import build_variable_summary, load_csv_bytes
 from src.discretization import apply_discretizations
+from src.lfit_engine import run_pride
 from src.preprocessing import apply_missing_value_treatments
 from src.state import initialize_session_state, reset_for_dataset
 from src.validation import validate_analysis_configuration
@@ -109,6 +110,24 @@ class StateTests(unittest.TestCase):
         self.assertIsNone(session_state.output_var)
         self.assertNotIn("role_edad", session_state)
         self.assertTrue(session_state.df.equals(dataframe))
+
+
+class PRIDEIntegrationTests(unittest.TestCase):
+    def test_pride_learns_static_rules_from_discrete_data(self):
+        dataframe = pd.DataFrame(
+            {
+                "tension": ["alta", "alta", "normal", "normal"],
+                "fumador": ["si", "no", "si", "no"],
+                "riesgo": ["alto", "alto", "bajo", "bajo"],
+            }
+        )
+
+        result = run_pride(dataframe, ["tension", "fumador"], "riesgo")
+
+        self.assertEqual(result.observations, 4)
+        self.assertEqual(result.target_column, "riesgo")
+        self.assertGreater(len(result.rules), 0)
+        self.assertTrue(all(rule.coverage >= rule.compatible_cases for rule in result.rules))
 
 
 if __name__ == "__main__":

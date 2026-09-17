@@ -26,6 +26,7 @@ DEFAULT_SESSION_VALUES = {
     "preprocessing_summary": {},
     "dataset_signature": None,
     "dataset_load_info": None,
+    "analysis_result": None,
     "mock_rules": DEFAULT_RULES,
 }
 
@@ -61,6 +62,7 @@ def reset_for_dataset(session_state: Any, dataframe: pd.DataFrame, signature: tu
     session_state.preprocessing_config = {}
     session_state.preprocessing_summary = {}
     session_state.dataset_signature = signature
+    session_state.analysis_result = None
     _clear_widget_state(session_state)
 
 
@@ -72,3 +74,4 @@ def reset_after_role_change(session_state: Any, dataframe: pd.DataFrame) -> None
     session_state.discretization_summary = {}
     session_state.preprocessing_config = {}
     session_state.preprocessing_summary = {}
+    session_state.analysis_result = None

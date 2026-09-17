@@ -32,14 +32,23 @@ Incluye:
 - discretización real por cuantiles, amplitud igual o cortes manuales;
 - vista previa antes/después y exportación del dataset procesado;
 - validación de la configuración y avisos de valores ausentes;
-- configuración de ejecución;
-- resultados simulados;
+- ejecución experimental de PRIDE mediante `pylfit`;
+- matriz y detalle de reglas aprendidas;
 - exportación.
 
 Todavía no incluye:
-- integración con LFIT/PRIDE;
+- modo LFIT longitudinal basado en transiciones temporales;
 - métricas de reglas;
 - grafo de relaciones.
+
+## Alcance actual de PRIDE
+
+La primera integración aprende reglas estáticas entre entradas discretizadas y una salida discreta.
+No representa todavía transiciones temporales entre visitas de un mismo paciente, por lo que no debe
+interpretarse como un modelo de evolución clínica.
+
+`pylfit`, la dependencia que proporciona PRIDE, se distribuye bajo licencia GPL-3.0. Revisa esta
+implicación con la dirección del TFG antes de distribuir o desplegar el proyecto fuera del ámbito académico.
 
 ## Estructura del proyecto
 

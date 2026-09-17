@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from src.lfit_engine import LFITEngineError, run_pride
 from src.validation import validate_analysis_configuration
 
 
@@ -42,6 +43,16 @@ def render() -> None:
     else:
         st.info("Aún no se ha aplicado ninguna discretización.")
 
-    st.selectbox("Algoritmo", ["PRIDE (propuesto)", "LFIT / otro algoritmo"])
+    st.selectbox("Algoritmo", ["PRIDE (pylfit)"])
+    st.caption(
+        "Modo experimental: aprende reglas estáticas entre entradas discretizadas y una salida discreta. "
+        "No representa una dinámica temporal de pacientes."
+    )
     if st.button("Ejecutar LFIT", type="primary", disabled=not validation.is_ready):
-        st.success("Ejecución simulada completada. La integración real con LFIT/PRIDE llegará después.")
+        try:
+            result = run_pride(st.session_state.processed_df, inputs, output)
+        except LFITEngineError as error:
+            st.error(str(error))
+        else:
+            st.session_state.analysis_result = result
+            st.success(f"PRIDE completó el aprendizaje: {len(result.rules)} reglas generadas.")

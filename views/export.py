@@ -20,6 +20,7 @@ def _rules_dataframe(result) -> pd.DataFrame:
                 "Salida": f"{rule.target_variable} = {rule.target_value}",
                 "Condiciones": rule.conditions_count,
                 "Cobertura": rule.coverage,
+                "Cobertura (%)": format_percentage(rule.coverage / result.observations),
                 "Casos compatibles": rule.compatible_cases,
                 "Consistencia": format_percentage(rule.data_consistency),
                 "Frecuencia de salida": format_percentage(rule.target_prevalence),

@@ -56,7 +56,9 @@ def sort_rules(rules: list[LearnedRule], criterion: str) -> list[LearnedRule]:
     return sorted(rules, key=options[criterion])
 
 
-def rules_to_matrix(rules: list[LearnedRule], feature_columns: tuple[str, ...]) -> pd.DataFrame:
+def rules_to_matrix(
+    rules: list[LearnedRule], feature_columns: tuple[str, ...], observations: int | None = None
+) -> pd.DataFrame:
     """Construye una matriz alineada de reglas, con una columna por variable."""
     rows = []
     for rule in rules:
@@ -73,6 +75,8 @@ def rules_to_matrix(rules: list[LearnedRule], feature_columns: tuple[str, ...]) 
                 "Lift": f"{rule.lift:.2f}" if rule.lift is not None else "—",
             }
         )
+        if observations:
+            row["Cobertura (%)"] = format_percentage(rule.coverage / observations)
         rows.append(row)
     return pd.DataFrame(rows)
 

@@ -37,7 +37,7 @@ Incluye:
 - selección de variables, tratamiento explícito de ausentes y discretización;
 - ejecución experimental de PRIDE mediante `pylfit`;
 - matriz de reglas, filtros, comparador, detalle y grafo de relaciones;
-- mapa interactivo de teoría por valor de salida y complejidad de antecedente, con zoom, paneo, tooltips y metadatos al seleccionar nodos;
+- mapa interactivo de teoría por valor de salida y complejidad de antecedente, con zoom, paneo, filtros para teorías grandes y selección sincronizada de reglas;
 - métricas por regla: cobertura, casos compatibles, consistencia observada, frecuencia de salida y lift;
 - indicadores descriptivos por variable y hallazgos para revisión;
 - trazabilidad de la ejecución: entradas, salida, filas, transformaciones, algoritmo y versión;
@@ -47,7 +47,7 @@ Incluye:
 
 Las métricas se calculan en el mismo dataset usado para aprender la teoría:
 
-- **Cobertura**: filas que cumplen el antecedente.
+- **Cobertura**: filas y porcentaje del dataset que cumplen el antecedente.
 - **Consistencia**: proporción de filas cubiertas cuya salida coincide con la regla.
 - **Lift**: consistencia dividida por la frecuencia global de ese valor de salida.
 

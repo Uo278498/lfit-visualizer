@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from src.lfit_engine import LearnedRule
 
 
 MAP_COMPONENT_HEIGHT = 760
+_COMPONENT_DIRECTORY = Path(__file__).resolve().parent.parent / "components" / "theory_map"
 
 
 def _json_safe(value: Any) -> Any:
@@ -34,7 +36,11 @@ def filter_rules_by_complexity(rules: Sequence[LearnedRule], layer: str) -> list
 
 
 def _graph_payload(
-    rules: Sequence[LearnedRule], target_column: str, target_value: str
+    rules: Sequence[LearnedRule],
+    target_column: str,
+    target_value: str,
+    observations: int | None,
+    active_rule_id: str | None,
 ) -> dict[str, Any]:
     condition_to_rules: dict[tuple[str, str], list[str]] = {}
     serialized_rules: list[dict[str, Any]] = []
@@ -48,6 +54,7 @@ def _graph_payload(
                 "text": rule.text,
                 "conditions": rule.conditions_count,
                 "coverage": rule.coverage,
+                "coveragePercentage": rule.coverage / observations if observations else None,
                 "compatibleCases": rule.compatible_cases,
                 "consistency": rule.data_consistency,
                 "targetPrevalence": rule.target_prevalence,
@@ -70,11 +77,16 @@ def _graph_payload(
         "conditions": conditions,
         "rules": serialized_rules,
         "target": {"label": f"{target_column} = {target_value}", "column": target_column, "value": target_value},
+        "activeRuleId": active_rule_id,
     }
 
 
 def build_theory_map_html(
-    rules: Sequence[LearnedRule], target_column: str, target_value: str
+    rules: Sequence[LearnedRule],
+    target_column: str,
+    target_value: str,
+    observations: int | None = None,
+    active_rule_id: str | None = None,
 ) -> str:
     """Genera un SVG con zoom, paneo, tooltip y panel de detalle al hacer clic.
 
@@ -82,7 +94,7 @@ def build_theory_map_html(
     conjuntos: una regla con tres condiciones no se convierte erróneamente en tres
     relaciones independientes hacia la salida.
     """
-    payload = _graph_payload(rules, target_column, target_value)
+    payload = _graph_payload(rules, target_column, target_value, observations, active_rule_id)
     serialized = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
     return f"""
 <!doctype html>
@@ -143,6 +155,7 @@ def build_theory_map_html(
   let view = {{ x: 0, y: 0, w: width, h: height }};
   let dragging = null;
   let selectedElement = null;
+  const ruleGroups = {{}};
 
   function element(name, attributes = {{}}) {{
     const item = document.createElementNS(svgNs, name);
@@ -151,6 +164,7 @@ def build_theory_map_html(
   }}
   function truncate(text, limit = 29) {{ return text.length > limit ? text.slice(0, limit - 1) + '…' : text; }}
   function percent(value) {{ return (Number(value || 0) * 100).toFixed(1) + '%'; }}
+  function coverage(rule) {{ return rule.coveragePercentage === null || rule.coveragePercentage === undefined ? `${{rule.coverage}} filas` : `${{rule.coverage}} filas (${{percent(rule.coveragePercentage)}})`; }}
   function lift(value) {{ return value === null || value === undefined ? '—' : Number(value).toFixed(2); }}
   function setView() {{ svg.setAttribute('viewBox', `${{view.x}} ${{view.y}} ${{view.w}} ${{view.h}}`); }}
   function appendText(parent, value, x, y, anchor = 'middle') {{
@@ -158,8 +172,9 @@ def build_theory_map_html(
     label.textContent = truncate(value);
     parent.appendChild(label);
   }}
-  function addLine(start, end, output = false) {{
+  function addLine(start, end, output = false, thickness = 1.5) {{
     const line = element('line', {{ x1: start.x, y1: start.y, x2: end.x, y2: end.y, class: output ? 'edge output' : 'edge' }});
+    line.style.strokeWidth = thickness;
     svg.appendChild(line);
   }}
   function clearSelection() {{ if (selectedElement) selectedElement.classList.remove('selected'); }}
@@ -179,14 +194,17 @@ def build_theory_map_html(
     entries.forEach(entry => {{ const row = document.createElement('li'); row.textContent = entry; list.appendChild(row); }});
     details.appendChild(list);
   }}
-  function selectNode(group, render) {{
+  function selectNode(group, render, ruleId = null) {{
     clearSelection(); selectedElement = group; group.classList.add('selected'); render();
+    if (ruleId && window.parent !== window) {{
+      window.parent.postMessage({{ type: 'lfit:ruleSelected', value: ruleId }}, '*');
+    }}
   }}
   function showRule(rule) {{
     title(rule.id);
     text(rule.text);
     section('Métricas', [
-      `Cobertura: ${{rule.coverage}} filas`,
+      `Cobertura: ${{coverage(rule)}}`,
       `Casos compatibles: ${{rule.compatibleCases}}`,
       `Consistencia: ${{percent(rule.consistency)}}`,
       `Frecuencia de salida: ${{percent(rule.targetPrevalence)}}`,
@@ -201,7 +219,7 @@ def build_theory_map_html(
     text(`Esta condición aparece en ${{condition.ruleIds.length}} regla(s) visibles.`);
     section('Reglas relacionadas', condition.ruleIds.map(id => {{
       const rule = ruleById[id];
-      return `${{id}} · cobertura ${{rule.coverage}} · consistencia ${{percent(rule.consistency)}}`;
+      return `${{id}} · cobertura ${{coverage(rule)}} · consistencia ${{percent(rule.consistency)}}`;
     }}));
   }}
   function showTarget() {{
@@ -213,32 +231,38 @@ def build_theory_map_html(
       `Reglas de 2 o más condiciones: ${{data.rules.filter(rule => rule.conditions >= 2).length}}`,
     ]);
   }}
-  function nodeGroup(kind, label, x, y, widthNode, onClick, tooltipLines) {{
+  function nodeGroup(kind, label, x, y, widthNode, onClick, tooltipLines, ruleId = null) {{
     const group = element('g', {{ class: `node ${{kind}}`, tabindex: '0', role: 'button' }});
     const rect = element('rect', {{ x: x - widthNode / 2, y: y - 22, width: widthNode, height: 44 }});
     group.appendChild(rect); appendText(group, label, x, y);
     group.addEventListener('mouseenter', event => showTooltip(event, tooltipLines()));
     group.addEventListener('mousemove', event => showTooltip(event, tooltipLines()));
     group.addEventListener('mouseleave', hideTooltip);
-    group.addEventListener('click', event => {{ event.stopPropagation(); selectNode(group, onClick); }});
+    group.addEventListener('click', event => {{ event.stopPropagation(); selectNode(group, onClick, ruleId); }});
     group.addEventListener('keydown', event => {{ if (event.key === 'Enter' || event.key === ' ') {{ event.preventDefault(); selectNode(group, onClick); }} }});
     svg.appendChild(group); return group;
   }}
 
   const targetPosition = {{ x: targetX, y: height / 2 }};
+  const maxCoverage = Math.max(...data.rules.map(rule => rule.coverage), 1);
   data.conditions.forEach((condition, index) => {{ positions[condition.id] = {{ x: conditionX, y: 80 + index * nodeGap }}; }});
   data.rules.forEach((rule, index) => {{ positions[rule.id] = {{ x: ruleX, y: 80 + index * nodeGap }}; }});
   data.conditions.forEach(condition => condition.ruleIds.forEach(ruleId => addLine(positions[condition.id], positions[ruleId])));
-  data.rules.forEach(rule => addLine(positions[rule.id], targetPosition, true));
+  data.rules.forEach(rule => addLine(positions[rule.id], targetPosition, true, 1.5 + 4 * rule.coverage / maxCoverage));
   data.conditions.forEach(condition => {{
     const position = positions[condition.id];
     nodeGroup('condition', condition.label, position.x, position.y, 260, () => showCondition(condition), () => [condition.label, `${{condition.ruleIds.length}} regla(s) visible(s)`]);
   }});
   data.rules.forEach(rule => {{
     const position = positions[rule.id];
-    nodeGroup('rule', rule.label, position.x, position.y, 126, () => showRule(rule), () => [rule.id, `Cobertura: ${{rule.coverage}}`, `Consistencia: ${{percent(rule.consistency)}}`, `Lift: ${{lift(rule.lift)}}`]);
+    const ratio = rule.coverage / maxCoverage;
+    const widthNode = 120 + 76 * ratio;
+    ruleGroups[rule.id] = nodeGroup('rule', rule.label, position.x, position.y, widthNode, () => showRule(rule), () => [rule.id, `Cobertura: ${{coverage(rule)}}`, `Consistencia: ${{percent(rule.consistency)}}`, `Lift: ${{lift(rule.lift)}}`], rule.id);
   }});
   nodeGroup('target', data.target.label, targetPosition.x, targetPosition.y, 270, showTarget, () => [data.target.label, `${{data.rules.length}} regla(s) visible(s)`]);
+  if (data.activeRuleId && ruleGroups[data.activeRuleId]) {{
+    selectNode(ruleGroups[data.activeRuleId], () => showRule(ruleById[data.activeRuleId]));
+  }}
   svg.addEventListener('click', () => {{ clearSelection(); selectedElement = null; details.innerHTML = '<h3>Mapa de teoría</h3><p id="hint">Selecciona una condición, una regla o la salida para ver sus metadatos.</p>'; }});
   svg.addEventListener('wheel', event => {{
     event.preventDefault();
@@ -262,3 +286,33 @@ def build_theory_map_html(
 </body>
 </html>
 """
+
+
+def render_theory_map(
+    rules: Sequence[LearnedRule],
+    target_column: str,
+    target_value: str,
+    observations: int,
+    active_rule_id: str | None,
+    key: str,
+) -> str | None:
+    """Renderiza el mapa y devuelve el identificador de regla pulsado, si existe."""
+    import streamlit.components.v1 as components
+
+    component = components.declare_component(
+        "lfit_theory_map", path=str(_COMPONENT_DIRECTORY)
+    )
+    selected = component(
+        html=build_theory_map_html(
+            rules,
+            target_column,
+            target_value,
+            observations=observations,
+            active_rule_id=active_rule_id,
+        ),
+        height=MAP_COMPONENT_HEIGHT,
+        default=None,
+        key=key,
+    )
+    valid_identifiers = {rule.identifier for rule in rules}
+    return selected if selected in valid_identifiers else None

@@ -174,9 +174,10 @@ class RuleAnalysisTests(unittest.TestCase):
         self.assertEqual(len(self.rules), 3)
 
     def test_matrix_comparison_and_relationships_are_aligned_by_variable(self):
-        matrix = rules_to_matrix(list(self.rules), ("edad", "tension", "fumador"))
+        matrix = rules_to_matrix(list(self.rules), ("edad", "tension", "fumador"), observations=20)
         comparison = comparison_table(self.rules[0], self.rules[1], ("edad", "tension", "fumador"))
         relationships = relationship_counts(list(self.rules), "riesgo")
+        self.assertEqual(matrix.loc[0, "Cobertura (%)"], "40.0%")
 
         self.assertEqual(matrix.loc[0, "fumador"], "—")
         self.assertIn("Condición compartida", comparison["Relación"].tolist())
@@ -227,13 +228,15 @@ class RuleAnalysisTests(unittest.TestCase):
             {"estabilidad": "pendiente de validacion"},
         )
 
-        html = build_theory_map_html([rule], "riesgo", "alto")
+        html = build_theory_map_html([rule], "riesgo", "alto", observations=20, active_rule_id="R5")
 
         self.assertEqual(filter_rules_by_complexity([rule], "2 condiciones"), [rule])
         self.assertEqual(filter_rules_by_complexity([rule], "1 condición"), [])
         self.assertIn("R5", html)
         self.assertIn("edad = mayor", html)
         self.assertIn("estabilidad", html)
+        self.assertIn("coveragePercentage", html)
+        self.assertIn("activeRuleId", html)
         self.assertIn("Rueda: zoom", html)
 
 

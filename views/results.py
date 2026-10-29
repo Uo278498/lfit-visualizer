@@ -2,7 +2,6 @@
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from src.rule_analysis import (
     comparison_table,
@@ -17,7 +16,7 @@ from src.rule_analysis import (
     sort_rules,
     variable_indicators,
 )
-from src.theory_map import MAP_COMPONENT_HEIGHT, build_theory_map_html, filter_rules_by_complexity
+from src.theory_map import filter_rules_by_complexity, render_theory_map
 
 
 def render() -> None:
@@ -41,18 +40,19 @@ def render() -> None:
     if not filtered_rules:
         st.warning("Ninguna regla cumple los filtros actuales. Ajusta los filtros de visualización.")
         return
+    active_rule = _render_active_rule_selector(filtered_rules)
 
     tabs = st.tabs(["Resumen", "Mapa de teoría", "Matriz de reglas", "Detalle", "Comparar", "Relaciones"])
     with tabs[0]:
         _render_summary(result, filtered_rules)
     with tabs[1]:
-        _render_theory_map(result, filtered_rules)
+        _render_theory_map(result, filtered_rules, active_rule)
     with tabs[2]:
-        _render_rule_matrix(filtered_rules, result.feature_columns)
+        _render_rule_matrix(filtered_rules, result.feature_columns, result.observations, active_rule)
     with tabs[3]:
-        _render_rule_detail(filtered_rules)
+        _render_rule_detail(active_rule, filtered_rules, result.observations)
     with tabs[4]:
-        _render_comparison(filtered_rules, result.feature_columns)
+        _render_comparison(filtered_rules, result.feature_columns, result.observations, active_rule)
     with tabs[5]:
         _render_relationships(filtered_rules, result)
 
@@ -207,15 +207,21 @@ def _render_filters(result):
     return sort_rules(filtered, sorting)
 
 
-def _selected_rule(rules, widget_key: str, label: str = "Regla seleccionada"):
+def _render_active_rule_selector(rules):
     identifiers = [rule.identifier for rule in rules]
-    if widget_key in st.session_state and st.session_state[widget_key] not in identifiers:
-        del st.session_state[widget_key]
-    selected = st.selectbox(label, identifiers, key=widget_key)
+    if st.session_state.get("active_rule_id") not in identifiers:
+        st.session_state.active_rule_id = identifiers[0]
+    st.selectbox(
+        "Regla activa para Mapa, Detalle y Comparar",
+        identifiers,
+        key="active_rule_id",
+        help="La regla elegida queda resaltada en el mapa y se reutiliza en las vistas de detalle y comparación.",
+    )
+    selected = st.session_state.active_rule_id
     return next(rule for rule in rules if rule.identifier == selected)
 
 
-def _render_theory_map(result, filtered_rules) -> None:
+def _render_theory_map(result, filtered_rules, active_rule) -> None:
     st.subheader("Mapa interactivo de teoría")
     st.caption(
         "El mapa mantiene cada antecedente conjunto como una regla propia: las condiciones "
@@ -238,59 +244,118 @@ def _render_theory_map(result, filtered_rules) -> None:
         )
 
     target_rules = [rule for rule in filtered_rules if rule.target_value == target_value]
-    map_rules = filter_rules_by_complexity(target_rules, layer)
-    if not map_rules:
+    candidate_rules = filter_rules_by_complexity(target_rules, layer)
+
+    filter_left, filter_middle, filter_right = st.columns(3)
+    with filter_left:
+        map_search = st.text_input(
+            "Buscar dentro del mapa",
+            placeholder="Ej.: fumador o R7",
+            key="theory_map_search",
+        ).strip().casefold()
+    with filter_middle:
+        map_variables = st.multiselect(
+            "Variables del antecedente",
+            result.feature_columns,
+            key="theory_map_variables",
+        )
+    with filter_right:
+        match_all = st.radio(
+            "Coincidencia de variables",
+            ["Al menos una", "Todas"],
+            horizontal=True,
+            key="theory_map_variable_match",
+        ) == "Todas"
+
+    if map_search:
+        candidate_rules = [
+            rule
+            for rule in candidate_rules
+            if map_search in rule.identifier.casefold() or map_search in rule.text.casefold()
+        ]
+    if map_variables:
+        expected = set(map_variables)
+        candidate_rules = [
+            rule
+            for rule in candidate_rules
+            if (expected.issubset(rule.antecedents) if match_all else bool(expected & set(rule.antecedents)))
+        ]
+    if not candidate_rules:
         st.info("No hay reglas visibles para esa salida y capa. Ajusta los filtros o la complejidad.")
         return
 
+    candidate_rules = sorted(candidate_rules, key=lambda rule: (-rule.coverage, rule.identifier))
+    visible_limit = st.slider(
+        "Máximo de reglas a dibujar",
+        1,
+        len(candidate_rules),
+        min(40, len(candidate_rules)),
+        key="theory_map_rule_limit",
+        help="En teorías grandes se dibujan primero las reglas de mayor cobertura; aumenta el límite si lo necesitas.",
+    )
+    map_rules = candidate_rules[:visible_limit]
+
     metrics = st.columns(3)
     metrics[0].metric("Reglas en el mapa", len(map_rules))
-    metrics[1].metric("Cobertura máxima", max(rule.coverage for rule in map_rules))
+    maximum_coverage = max(rule.coverage for rule in map_rules)
+    metrics[1].metric("Cobertura máxima", f"{maximum_coverage} · {format_percentage(maximum_coverage / result.observations)}")
     metrics[2].metric("Condiciones distintas", len({item for rule in map_rules for item in rule.antecedents.items()}))
-    components.html(
-        build_theory_map_html(map_rules, result.target_column, target_value),
-        height=MAP_COMPONENT_HEIGHT,
-        scrolling=False,
+    selected_rule_id = render_theory_map(
+        map_rules,
+        result.target_column,
+        target_value,
+        observations=result.observations,
+        active_rule_id=active_rule.identifier if active_rule in map_rules else None,
+        key="theory_map_component",
     )
+    if selected_rule_id and selected_rule_id != active_rule.identifier:
+        st.session_state.active_rule_id = selected_rule_id
+        st.rerun()
     st.caption(
         "Pasa el ratón por un nodo para una vista rápida. Haz clic en una condición, regla o salida "
         "para fijar sus métricas y metadatos en el panel derecho. Usa la rueda para zoom y arrastra "
-        "el fondo para desplazarte; doble clic reinicia la vista."
+        "el fondo para desplazarte; doble clic reinicia la vista. La regla activa seleccionada arriba "
+        "queda resaltada también en Detalle y Comparar."
     )
     with st.expander("Reglas incluidas en el mapa"):
-        st.dataframe(rules_to_matrix(map_rules, result.feature_columns), use_container_width=True, hide_index=True)
+        st.dataframe(
+            rules_to_matrix(map_rules, result.feature_columns, result.observations),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
-def _render_rule_matrix(rules, feature_columns) -> None:
-    st.dataframe(rules_to_matrix(rules, feature_columns), use_container_width=True, hide_index=True)
+def _render_rule_matrix(rules, feature_columns, observations, active_rule) -> None:
+    st.dataframe(
+        rules_to_matrix(rules, feature_columns, observations), use_container_width=True, hide_index=True
+    )
     st.caption("— indica que esa variable no participa en el antecedente de la regla.")
-    _selected_rule(rules, "matrix_rule_picker", "Resaltar una regla en otras pestañas")
+    st.caption(f"Regla activa: {active_rule.identifier}. Puedes cambiarla en el selector situado sobre las pestañas.")
 
 
-def _render_rule_detail(rules) -> None:
-    rule = _selected_rule(rules, "detail_rule_picker")
+def _render_rule_detail(rule, visible_rules, observations) -> None:
     st.code(rule.text, language=None)
     first_row = st.columns(3)
-    first_row[0].metric("Condiciones", rule.conditions_count)
-    first_row[1].metric("Filas cubiertas", rule.coverage)
+    first_row[0].metric("Filas cubiertas", rule.coverage)
+    first_row[1].metric("Cobertura", format_percentage(rule.coverage / observations))
     first_row[2].metric("Casos compatibles", rule.compatible_cases)
     second_row = st.columns(3)
-    second_row[0].metric("Consistencia", format_percentage(rule.data_consistency))
-    second_row[1].metric("Frecuencia de salida", format_percentage(rule.target_prevalence))
+    second_row[0].metric("Condiciones", rule.conditions_count)
+    second_row[1].metric("Consistencia", format_percentage(rule.data_consistency))
     second_row[2].metric("Lift", f"{rule.lift:.2f}" if rule.lift is not None else "—")
     st.caption(
         "La consistencia y el lift se calculan sobre el dataset de aprendizaje. "
         "La regla describe una asociación en datos discretizados; no implica causalidad clínica."
     )
     st.subheader("Reglas con condiciones similares")
-    st.dataframe(similar_rules(rule, rules).head(5), use_container_width=True, hide_index=True)
+    st.dataframe(similar_rules(rule, visible_rules).head(5), use_container_width=True, hide_index=True)
 
 
-def _render_comparison(rules, feature_columns) -> None:
+def _render_comparison(rules, feature_columns, observations, active_rule) -> None:
     if len(rules) < 2:
         st.info("Necesitas al menos dos reglas visibles para compararlas.")
         return
-    first = _selected_rule(rules, "comparison_first_rule_picker", "Primera regla")
+    first = active_rule
     candidates = [rule.identifier for rule in rules if rule.identifier != first.identifier]
     second_identifier = st.selectbox("Comparar con", candidates, key="comparison_rule_picker")
     second = next(rule for rule in rules if rule.identifier == second_identifier)
@@ -301,15 +366,17 @@ def _render_comparison(rules, feature_columns) -> None:
     )
     metrics = pd.DataFrame(
         {
-            "Métrica": ["Cobertura", "Consistencia", "Lift", "Condiciones"],
+            "Métrica": ["Cobertura", "Cobertura (%)", "Consistencia", "Lift", "Condiciones"],
             first.identifier: [
                 first.coverage,
+                format_percentage(first.coverage / observations),
                 format_percentage(first.data_consistency),
                 f"{first.lift:.2f}" if first.lift is not None else "—",
                 first.conditions_count,
             ],
             second.identifier: [
                 second.coverage,
+                format_percentage(second.coverage / observations),
                 format_percentage(second.data_consistency),
                 f"{second.lift:.2f}" if second.lift is not None else "—",
                 second.conditions_count,
@@ -346,4 +413,8 @@ def _render_relationships(rules, result) -> None:
         row["Tipo"],
         result.target_column,
     )
-    st.dataframe(rules_to_matrix(related, result.feature_columns), use_container_width=True, hide_index=True)
+    st.dataframe(
+        rules_to_matrix(related, result.feature_columns, result.observations),
+        use_container_width=True,
+        hide_index=True,
+    )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Mapping
@@ -30,6 +30,7 @@ class LearnedRule:
     data_consistency: float = 0.0
     target_prevalence: float = 0.0
     lift: float | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,10 @@ def run_pride(
                 data_consistency=data_consistency,
                 target_prevalence=target_prevalence,
                 lift=lift,
+                metadata={
+                    "origen": "PRIDE (pylfit)",
+                    "contexto_metricas": "Calculadas sobre el dataset de aprendizaje",
+                },
             )
         )
 

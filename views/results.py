@@ -2,6 +2,7 @@
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.rule_analysis import (
     comparison_table,
@@ -16,6 +17,7 @@ from src.rule_analysis import (
     sort_rules,
     variable_indicators,
 )
+from src.theory_map import MAP_COMPONENT_HEIGHT, build_theory_map_html, filter_rules_by_complexity
 
 
 def render() -> None:
@@ -40,16 +42,18 @@ def render() -> None:
         st.warning("Ninguna regla cumple los filtros actuales. Ajusta los filtros de visualización.")
         return
 
-    tabs = st.tabs(["Resumen", "Matriz de reglas", "Detalle", "Comparar", "Relaciones"])
+    tabs = st.tabs(["Resumen", "Mapa de teoría", "Matriz de reglas", "Detalle", "Comparar", "Relaciones"])
     with tabs[0]:
         _render_summary(result, filtered_rules)
     with tabs[1]:
-        _render_rule_matrix(filtered_rules, result.feature_columns)
+        _render_theory_map(result, filtered_rules)
     with tabs[2]:
-        _render_rule_detail(filtered_rules)
+        _render_rule_matrix(filtered_rules, result.feature_columns)
     with tabs[3]:
-        _render_comparison(filtered_rules, result.feature_columns)
+        _render_rule_detail(filtered_rules)
     with tabs[4]:
+        _render_comparison(filtered_rules, result.feature_columns)
+    with tabs[5]:
         _render_relationships(filtered_rules, result)
 
 
@@ -209,6 +213,52 @@ def _selected_rule(rules, widget_key: str, label: str = "Regla seleccionada"):
         del st.session_state[widget_key]
     selected = st.selectbox(label, identifiers, key=widget_key)
     return next(rule for rule in rules if rule.identifier == selected)
+
+
+def _render_theory_map(result, filtered_rules) -> None:
+    st.subheader("Mapa interactivo de teoría")
+    st.caption(
+        "El mapa mantiene cada antecedente conjunto como una regla propia: las condiciones "
+        "no se interpretan como influencias independientes."
+    )
+    target_values = sorted({rule.target_value for rule in filtered_rules})
+    left, right = st.columns(2)
+    with left:
+        target_value = st.selectbox(
+            f"Valor de {result.target_column} que representar",
+            target_values,
+            key="theory_map_target_value",
+        )
+    with right:
+        layer = st.selectbox(
+            "Capa de complejidad del antecedente",
+            ["Todas", "1 condición", "2 condiciones", "3 condiciones", "4 o más condiciones"],
+            key="theory_map_complexity",
+            help="Permite examinar reglas simples, pares, tríos o reglas más complejas.",
+        )
+
+    target_rules = [rule for rule in filtered_rules if rule.target_value == target_value]
+    map_rules = filter_rules_by_complexity(target_rules, layer)
+    if not map_rules:
+        st.info("No hay reglas visibles para esa salida y capa. Ajusta los filtros o la complejidad.")
+        return
+
+    metrics = st.columns(3)
+    metrics[0].metric("Reglas en el mapa", len(map_rules))
+    metrics[1].metric("Cobertura máxima", max(rule.coverage for rule in map_rules))
+    metrics[2].metric("Condiciones distintas", len({item for rule in map_rules for item in rule.antecedents.items()}))
+    components.html(
+        build_theory_map_html(map_rules, result.target_column, target_value),
+        height=MAP_COMPONENT_HEIGHT,
+        scrolling=False,
+    )
+    st.caption(
+        "Pasa el ratón por un nodo para una vista rápida. Haz clic en una condición, regla o salida "
+        "para fijar sus métricas y metadatos en el panel derecho. Usa la rueda para zoom y arrastra "
+        "el fondo para desplazarte; doble clic reinicia la vista."
+    )
+    with st.expander("Reglas incluidas en el mapa"):
+        st.dataframe(rules_to_matrix(map_rules, result.feature_columns), use_container_width=True, hide_index=True)
 
 
 def _render_rule_matrix(rules, feature_columns) -> None:

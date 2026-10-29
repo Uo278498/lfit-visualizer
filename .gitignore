@@ -5,3 +5,4 @@ __pycache__/
 .coverage
 .streamlit/secrets.toml
 data/private/
+/mis_documentos/

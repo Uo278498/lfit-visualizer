@@ -37,6 +37,7 @@ Incluye:
 - selección de variables, tratamiento explícito de ausentes y discretización;
 - ejecución experimental de PRIDE mediante `pylfit`;
 - matriz de reglas, filtros, comparador, detalle y grafo de relaciones;
+- mapa interactivo de teoría por valor de salida y complejidad de antecedente, con zoom, paneo, tooltips y metadatos al seleccionar nodos;
 - métricas por regla: cobertura, casos compatibles, consistencia observada, frecuencia de salida y lift;
 - indicadores descriptivos por variable y hallazgos para revisión;
 - trazabilidad de la ejecución: entradas, salida, filas, transformaciones, algoritmo y versión;

@@ -17,6 +17,7 @@ from src.rule_analysis import (
     rules_to_matrix,
     variable_indicators,
 )
+from src.theory_map import build_theory_map_html, filter_rules_by_complexity
 
 
 class SessionStateStub(dict):
@@ -209,6 +210,31 @@ class RuleAnalysisTests(unittest.TestCase):
         self.assertEqual(filtered, measured_rules)
         self.assertEqual(indicators.loc[0, "Consistencia ponderada"], "80.0%")
         self.assertIn("mayor lift", findings[0])
+
+    def test_theory_map_keeps_joint_antecedents_and_metadata(self):
+        rule = LearnedRule(
+            "R5",
+            {"edad": "mayor", "tension": "alta"},
+            "riesgo",
+            "alto",
+            "",
+            2,
+            8,
+            7,
+            0.875,
+            0.5,
+            1.75,
+            {"estabilidad": "pendiente de validacion"},
+        )
+
+        html = build_theory_map_html([rule], "riesgo", "alto")
+
+        self.assertEqual(filter_rules_by_complexity([rule], "2 condiciones"), [rule])
+        self.assertEqual(filter_rules_by_complexity([rule], "1 condición"), [])
+        self.assertIn("R5", html)
+        self.assertIn("edad = mayor", html)
+        self.assertIn("estabilidad", html)
+        self.assertIn("Rueda: zoom", html)
 
 
 if __name__ == "__main__":

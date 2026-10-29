@@ -24,6 +24,7 @@ def _rules_dataframe(result) -> pd.DataFrame:
                 "Consistencia": format_percentage(rule.data_consistency),
                 "Frecuencia de salida": format_percentage(rule.target_prevalence),
                 "Lift": round(rule.lift, 3) if rule.lift is not None else "",
+                "Metadatos": json.dumps(getattr(rule, "metadata", {}), ensure_ascii=False, sort_keys=True, default=str),
             }
             for rule in result.rules
         ]
